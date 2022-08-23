@@ -1,0 +1,146 @@
+# Welcome to the Modern Data Lake.
+---
+version: '3'
+
+# Airflow Main Setup
+x-airflow-common:
+  &airflow-common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  environment:
+    &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+    AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
+    AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
+    AIRFLOW__CORE__FERNET_KEY: ''
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__API__AUTH_BACKEND: 'airflow.api.auth.backend.basic_auth'
+  volumes:
+    - ${PWD}/dags:/opt/airflow/dags
+    - ${PWD}/logs:/opt/airflow/logs
+    - ${PWD}/plugins:/opt/airflow/plugins
+  user: "${AIRFLOW_UID:-50000}:$AIRFLOW_GID:-50000}"
+  env_file:
+    - .env
+  networks:
+    - oasiscorp
+  depends_on:
+    redis:
+      condition: service_healthy
+    postgres:
+      condition: service_healthy
+
+services:
+
+  # Postgres DB
+  postgres:
+    hostname: postgres
+    container_name: postgres
+    build:
+      context: ./postgres
+      dockerfile: Dockerfile
+    volumes:
+      - postgres-db-volume:/var/lib/postgresql/data
+    env_file:
+      - .env
+    ports:
+      - 5432:5432
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      retries: 5
+    restart: always
+    networks:
+     - oasiscorp
+
+  # Redis: A key-value store
+  redis:
+    container_name: redis
+    image: 'redis:latest'
+    ports:
+      - 6379:6379
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 30s
+      retries: 50
+    restart: always
+    networks:
+      - oasiscorp
+
+  # Airflow Web UI
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    container_name: webserver
+    ports:
+      - 8088:8080
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8088/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    restart: always
+    networks:
+      - oasiscorp
+    
+  # Airflow Scheduler
+  airflow-scheduler:
+    container_name: scheduler
+    <<: *airflow-common
+    command: scheduler
+    restart: always
+    networks:
+      - oasiscorp
+
+  # Airflow Worker 
+  airflow-worker:
+    container_name: worker
+    <<: *airflow-common
+    command: celery worker
+    restart: always
+    networks:
+      - oasiscorp
+
+  # Airflow DB
+  airflow-init:
+    container_name: airflow-init
+    <<: *airflow-common
+    command: version
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_UPGRADE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: ${POSTGRES_USER}
+      _AIRFLOW_WWW_USER_PASSWORD: ${POSTGRES_PASSWORD}
+    networks:
+      - oasiscorp
+  
+  # Airflow CLI
+  airflow-cli:
+    <<: *airflow-common
+    container_name: airflow-cli
+    profiles:
+      - debug
+    environment:
+      <<: *airflow-common-env
+      CONNECTION_CHECK_MAX_COUNT: "0"
+    command:
+      - bash
+      - -c 
+      - airflow
+    networks:
+      - oasiscorp
+
+# Volumes 
+volumes:
+  postgres-db-volume:
+
+# Network Bridge Connection
+networks:
+  oasiscorp:
+    name: oasiscorp
+    driver: bridge
