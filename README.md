@@ -73,3 +73,12 @@ Airflow UI Login:
 docker exec -it postgres psql -U airflow
 
 ```
+
+## Parameters 
+If want change this params in `docker-compose.yaml` & `.env`
+| Parameter | Description |
+| ------ | ------ |
+| POSTGRES_USER | The Postgres user to connect **airflow** |
+| POSTGRES_PASSWORD | The Postgres password to connect **airflow** |
+| POSTGRES_DB | The Postgres database name to connect **airflow** |
+| port | The port mapped by Postgres is **5432** in your container. In this example, use the port **5438** on the host machine |

@@ -37,11 +37,9 @@ services:
 
   # Postgres DB
   postgres:
+    image: 'postgres:latest'
     hostname: postgres
     container_name: postgres
-    build:
-      context: ./postgres
-      dockerfile: Dockerfile
     volumes:
       - postgres-db-volume:/var/lib/postgresql/data
     env_file:
